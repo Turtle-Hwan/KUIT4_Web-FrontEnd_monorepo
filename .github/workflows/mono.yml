@@ -7,7 +7,7 @@ on:
   pull_request:
     branches:
       - main
-      
+
   # Actions 탭에서 수동으로 워크플로우를 실행할 수 있도록 구성
   workflow_dispatch:
 
@@ -15,7 +15,6 @@ on:
 concurrency:
   group: 'pages'
   cancel-in-progress: true
-
 
 jobs:
   build:
@@ -30,6 +29,7 @@ jobs:
     - name: Install and Build Projects on Push
       if: github.event_name == 'push'
       run: |
+        build_dirs=""
         for week_dir in week{1..10}; do
           for project_dir in ${{ github.workspace }}/$week_dir/*; do
             if [ -f "$project_dir/package.json" ]; then
@@ -38,15 +38,19 @@ jobs:
               if grep -q '"build":' package.json; then
                 npm install
                 npm run build
+                build_dirs="$build_dirs $project_dir/dist"
               fi
               cd - # Go back to previous directory
             fi
           done
         done
+        echo "Build directories: $build_dirs"
+        echo $build_dirs > build_dirs.txt
 
     - name: Install and Build Projects on Pull Request
       if: github.event_name == 'pull_request'
       run: |
+        build_dirs=""
         # Get the list of modified files in the pull request
         modified_dirs=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} | cut -d/ -f1-2 | sort | uniq)
         for dir in $modified_dirs; do
@@ -56,15 +60,17 @@ jobs:
             if grep -q '"build":' package.json; then
               npm install
               npm run build
+              build_dirs="$build_dirs $dir/dist"
             fi
             cd - # Go back to previous directory
           fi
         done
+        echo "Build directories: $build_dirs"
+        echo $build_dirs > build_dirs.txt
 
     - name: Deploy to GitHub Pages
       if: github.event_name == 'push' || github.event_name == 'pull_request'
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ${{ github.workspace }}
-        destination_dir: $week_dir/$project_dir/dist
+        publish_dir: $(cat build_dirs.txt)
